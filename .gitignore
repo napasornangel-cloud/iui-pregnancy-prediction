@@ -1,0 +1,29 @@
+﻿# Virtual environment
+.venv/
+
+# Patient data - DO NOT upload
+data/
+*.xlsx
+*.csv
+
+# Reports
+reports_ours/
+reports_test/
+reports_test2/tables/
+reports_temporal/
+
+# Models - keep only final model
+models_ours/
+models_test/
+models_test2/imbalance_sensitivity/
+models_test2/saved_models/
+models_temporal/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+__pycache__/
+*.pyc
+
+# OS files
+.DS_Store
+Thumbs.db
