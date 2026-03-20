@@ -9,7 +9,7 @@ from pathlib import Path
 # =============================
 # Paths / fixed settings
 # =============================
-BASE_DIR = Path(__file__).resolve().parent.parent  # src/ → project root
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 BASE_MODEL_PATH = BASE_DIR / "models_test2/final_model/XGBoost_Baseline_calibration_base_model.joblib"
 CALIBRATOR_PATH = BASE_DIR / "models_test2/final_model/isotonic_calibrator_final_xgb.joblib"
@@ -41,7 +41,7 @@ VERY_LOW_CUTOFF  = LOW_TIER_CUTOFF
 
 DISPLAY_MAP = {
     "Uterine_Factors":                 "Uterine factor",
-    "Total_Female_Pathology":          "Total female pathology burden",
+    "Total_Female_Pathology":          "Total female pathology score",
     "Ovulatory_Factors":               "Ovulatory factor",
     "Cycle_Day":                       "IUI cycle day",
     "Post_TPMSC":                      "Postwash TPMSC",
@@ -49,7 +49,7 @@ DISPLAY_MAP = {
     "Pre_Count":                       "Prewash sperm count",
     "Gynecological_Surgical_History":  "Gynecologic surgery history",
     "Post_Count":                      "Postwash sperm count",
-    "Delta_Motile":                    "Change in total motility",
+    "Delta_Motile":                    "Δ Total motility",
     "Age_Female":                      "Female age",
     "First_Progressive_Motile":        "Initial progressive motility",
     "First_Volume":                    "Initial semen volume",
@@ -161,8 +161,16 @@ def plot_shap_waterfall(X_row):
     model     = load_base_model()
     xgb_model = model.named_steps["model"] if hasattr(model, "named_steps") else model
     explainer = shap.TreeExplainer(xgb_model)
-    exp       = explainer(X_row)
-    fig, ax   = plt.subplots(figsize=(8, 5))
+
+    # compute SHAP จาก X_row เดิม
+    exp = explainer(X_row)
+
+    # เปลี่ยน feature names เป็น formal names ก่อน plot
+    exp.feature_names = [
+        DISPLAY_MAP.get(c, c) for c in X_row.columns
+    ]
+
+    fig, ax = plt.subplots(figsize=(8, 5))
     shap.plots.waterfall(exp[0], max_display=10, show=False)
     plt.tight_layout()
     return fig
@@ -275,11 +283,11 @@ with tab1:
 
         with col1:
             st.markdown("**Female & cycle factors**")
-            age_female      = st.number_input("Female age", 18.0, 55.0, 32.0, 1.0)
-            bmi             = st.number_input("BMI", 10.0, 60.0, 22.0, 0.1)
-            menstrual_interval_days = st.number_input("Menstrual cycle interval (days)", 15.0, 180.0, 28.0, 1.0)
-            cycle_day       = st.number_input("IUI cycle day", 1.0, 40.0, 14.0, 1.0)
-            infertility_type = st.selectbox("Infertility type",
+            age_female               = st.number_input("Female age", 18.0, 55.0, 32.0, 1.0)
+            bmi                      = st.number_input("BMI", 10.0, 60.0, 22.0, 0.1)
+            menstrual_interval_days  = st.number_input("Menstrual cycle interval (days)", 15.0, 180.0, 28.0, 1.0)
+            cycle_day                = st.number_input("IUI cycle day", 1.0, 40.0, 14.0, 1.0)
+            infertility_type         = st.selectbox("Infertility type",
                 options=[1, 0],
                 format_func=lambda x: "Primary infertility" if x == 1 else "Secondary infertility")
 
@@ -295,14 +303,14 @@ with tab1:
 
         with col2:
             st.markdown("**Semen parameters — initial sample**")
-            first_volume      = st.number_input("Initial semen volume (mL)",          0.0, 20.0, 2.5, 0.1)
-            first_count       = st.number_input("Initial sperm count (×10⁶/mL)",      0.0, 500.0, 40.0, 0.1)
-            first_motile      = st.number_input("Initial total motility (%)",          0.0, 100.0, 60.0, 0.1)
-            first_prog_motile = st.number_input("Initial progressive motility (%)",    0.0, 100.0, 40.0, 0.1)
+            first_volume      = st.number_input("Initial semen volume (mL)",       0.0, 20.0,  2.5, 0.1)
+            first_count       = st.number_input("Initial sperm count (×10⁶/mL)",   0.0, 500.0, 40.0, 0.1)
+            first_motile      = st.number_input("Initial total motility (%)",       0.0, 100.0, 60.0, 0.1)
+            first_prog_motile = st.number_input("Initial progressive motility (%)", 0.0, 100.0, 40.0, 0.1)
 
             st.markdown("**Semen parameters — prewash**")
-            pre_count   = st.number_input("Prewash sperm count (×10⁶/mL)",  0.0, 500.0, 35.0, 0.1)
-            pre_motile  = st.number_input("Prewash motility (%)",            0.0, 100.0, 60.0, 0.1)
+            pre_count  = st.number_input("Prewash sperm count (×10⁶/mL)", 0.0, 500.0, 35.0, 0.1)
+            pre_motile = st.number_input("Prewash motility (%)",           0.0, 100.0, 60.0, 0.1)
 
             st.markdown("**Semen parameters — postwash**")
             post_count  = st.number_input("Postwash sperm count (×10⁶/mL)", 0.0, 500.0, 12.0, 0.1)
