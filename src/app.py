@@ -14,25 +14,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 BASE_MODEL_PATH = BASE_DIR / "models_test2/final_model/XGBoost_Baseline_calibration_base_model.joblib"
 CALIBRATOR_PATH = BASE_DIR / "models_test2/final_model/isotonic_calibrator_final_xgb.joblib"
 SHAP_IMG        = BASE_DIR / "reports_test2/figures/shap_final_xgb/SHAP_Beeswarm_Final_XGBoost_Baseline.png"
-TEMPORAL_TABLE  = BASE_DIR / "reports_temporal/tables/Temporal_Validation_Results.xlsx"
 
 FINAL_FEATURES = [
-    "Uterine_Factors",
-    "Total_Female_Pathology",
-    "Ovulatory_Factors",
-    "Cycle_Day",
-    "Post_TPMSC",
-    "First_Count",
-    "Pre_Count",
-    "Gynecological_Surgical_History",
-    "Post_Count",
-    "Delta_Motile",
-    "Age_Female",
-    "First_Progressive_Motile",
-    "First_Volume",
-    "Menstrual_Interval_Days",
-    "First_Motile",
-    "BMI_InfertilityType_Interaction",
+    "Uterine_Factors", "Total_Female_Pathology", "Ovulatory_Factors",
+    "Cycle_Day", "Post_TPMSC", "First_Count", "Pre_Count",
+    "Gynecological_Surgical_History", "Post_Count", "Delta_Motile",
+    "Age_Female", "First_Progressive_Motile", "First_Volume",
+    "Menstrual_Interval_Days", "First_Motile", "BMI_InfertilityType_Interaction",
 ]
 
 LOW_TIER_CUTOFF  = 0.023256
@@ -67,6 +55,32 @@ REQUIRED_RAW_COLUMNS = [
     "First_Volume", "Menstrual_Interval_Days", "First_Motile",
     "Body_Mass_Index", "Infertility_Type",
 ]
+
+# Training medians สำหรับ impute missing values
+TRAINING_MEDIANS = {
+    "Uterine_Factors":             0.0,
+    "Tubal_Factors":               0.0,
+    "Ovarian_Factors":             0.0,
+    "Ovulatory_Factors":           0.0,
+    "Cervical_Factors":            0.0,
+    "Endometriosis_Factors":       0.0,
+    "Multisystem_Factors":         0.0,
+    "Cycle_Day":                   14.0,
+    "Post_TPMSC":                  10.641124,
+    "First_Count":                 41.31,
+    "Pre_Count":                   42.6,
+    "Gynecological_Surgical_History": 0.0,
+    "Post_Count":                  22.2,
+    "Post_Motile":                 96.93,
+    "Pre_Motile":                  57.6,
+    "Age_Female":                  35.0,
+    "First_Progressive_Motile":    52.56,
+    "First_Volume":                3.0,
+    "Menstrual_Interval_Days":     29.0,
+    "First_Motile":                54.7,
+    "Body_Mass_Index":             21.718066,
+    "Infertility_Type":            0.0,
+}
 
 # =============================
 # Helpers
@@ -109,20 +123,41 @@ def load_calibrator():
 
 def compute_engineered_features(df_raw):
     df = df_raw.copy()
-    missing = [c for c in REQUIRED_RAW_COLUMNS if c not in df.columns]
-    if missing:
-        raise ValueError("Missing required raw columns:\n- " + "\n- ".join(missing))
+
+    # เช็ค columns ที่จำเป็น
+    missing_cols = [c for c in REQUIRED_RAW_COLUMNS if c not in df.columns]
+    if missing_cols:
+        raise ValueError("Missing required raw columns:\n- " + "\n- ".join(missing_cols))
+
+    # แปลงเป็น numeric
     for c in REQUIRED_RAW_COLUMNS:
         df[c] = pd.to_numeric(df[c], errors="coerce")
-    bad_rows = df[REQUIRED_RAW_COLUMNS].isna().any(axis=1)
-    if bad_rows.any():
-        raise ValueError(f"Missing or non-numeric values at row indices: {list(df.index[bad_rows][:10])}")
-    df["Total_Female_Pathology"]          = (df["Uterine_Factors"] + df["Tubal_Factors"] +
-                                              df["Ovarian_Factors"] + df["Ovulatory_Factors"] +
-                                              df["Cervical_Factors"] + df["Endometriosis_Factors"] +
-                                              df["Multisystem_Factors"])
+
+    # impute missing values ด้วย training medians
+    imputed_cols = []
+    for c in REQUIRED_RAW_COLUMNS:
+        if df[c].isna().any():
+            median_val = TRAINING_MEDIANS.get(c, 0.0)
+            df[c] = df[c].fillna(median_val)
+            imputed_cols.append(f"{c} → {median_val}")
+
+    if imputed_cols:
+        st.warning(
+            "⚠️ Missing values were imputed using training set medians:\n\n" +
+            "\n".join(f"- {x}" for x in imputed_cols) +
+            "\n\nResults should be interpreted with caution."
+        )
+
+    # Feature engineering
+    df["Total_Female_Pathology"] = (
+        df["Uterine_Factors"] + df["Tubal_Factors"] +
+        df["Ovarian_Factors"] + df["Ovulatory_Factors"] +
+        df["Cervical_Factors"] + df["Endometriosis_Factors"] +
+        df["Multisystem_Factors"]
+    )
     df["Delta_Motile"]                    = df["Post_Motile"] - df["Pre_Motile"]
     df["BMI_InfertilityType_Interaction"] = df["Body_Mass_Index"] * df["Infertility_Type"]
+
     return df[FINAL_FEATURES].copy()
 
 def predict_raw_and_calibrated(X):
@@ -137,8 +172,8 @@ def local_explain_one_row(X_row, top_k=8):
     xgb_model = model.named_steps["model"] if hasattr(model, "named_steps") else model
     explainer = shap.TreeExplainer(xgb_model)
     shap_vals = explainer.shap_values(X_row)
-    if isinstance(shap_vals, list):         shap_vals = shap_vals[1]
-    if shap_vals.ndim == 3:                 shap_vals = shap_vals[:, :, 1]
+    if isinstance(shap_vals, list):     shap_vals = shap_vals[1]
+    if shap_vals.ndim == 3:             shap_vals = shap_vals[:, :, 1]
     sv   = shap_vals.reshape(-1)
     base = explainer.expected_value
     if isinstance(base, (list, np.ndarray)):
@@ -161,15 +196,8 @@ def plot_shap_waterfall(X_row):
     model     = load_base_model()
     xgb_model = model.named_steps["model"] if hasattr(model, "named_steps") else model
     explainer = shap.TreeExplainer(xgb_model)
-
-    # compute SHAP จาก X_row เดิม
     exp = explainer(X_row)
-
-    # เปลี่ยน feature names เป็น formal names ก่อน plot
-    exp.feature_names = [
-        DISPLAY_MAP.get(c, c) for c in X_row.columns
-    ]
-
+    exp.feature_names = [DISPLAY_MAP.get(c, c) for c in X_row.columns]
     fig, ax = plt.subplots(figsize=(8, 5))
     shap.plots.waterfall(exp[0], max_display=10, show=False)
     plt.tight_layout()
@@ -259,6 +287,11 @@ with st.expander("ℹ️ How to use this tool", expanded=False):
 - Tier 2 (Intermediate): {LOW_TIER_CUTOFF:.6f} ≤ p < {HIGH_TIER_CUTOFF:.6f}
 - Tier 3 (High): p ≥ {HIGH_TIER_CUTOFF:.6f}
 
+**Missing values**
+- If a value is unavailable, leave the field as 0 or use the default value
+- Missing values will be automatically imputed using training set medians
+- Results should be interpreted with caution when values are imputed
+
 **Important**
 - Outputs are statistical estimates, not guarantees.
 - Always use in conjunction with clinical judgment.
@@ -277,17 +310,18 @@ tab1, tab2, tab3, tab4 = st.tabs(["✏️ Manual entry", "📂 Batch CSV", "🔍
 # =================================
 with tab1:
     st.subheader("Manual entry — one patient-cycle")
+    st.caption("Leave fields as 0 if value is unavailable — missing values will be imputed automatically.")
 
     with st.form("manual_form"):
         col1, col2 = st.columns(2)
 
         with col1:
             st.markdown("**Female & cycle factors**")
-            age_female               = st.number_input("Female age", 18.0, 55.0, 32.0, 1.0)
-            bmi                      = st.number_input("BMI", 10.0, 60.0, 22.0, 0.1)
-            menstrual_interval_days  = st.number_input("Menstrual cycle interval (days)", 15.0, 180.0, 28.0, 1.0)
-            cycle_day                = st.number_input("IUI cycle day", 1.0, 40.0, 14.0, 1.0)
-            infertility_type         = st.selectbox("Infertility type",
+            age_female              = st.number_input("Female age", 18.0, 55.0, 35.0, 1.0)
+            bmi                     = st.number_input("BMI", 10.0, 60.0, 21.7, 0.1)
+            menstrual_interval_days = st.number_input("Menstrual cycle interval (days)", 15.0, 180.0, 29.0, 1.0)
+            cycle_day               = st.number_input("IUI cycle day", 1.0, 40.0, 14.0, 1.0)
+            infertility_type        = st.selectbox("Infertility type",
                 options=[1, 0],
                 format_func=lambda x: "Primary infertility" if x == 1 else "Secondary infertility")
 
@@ -303,19 +337,19 @@ with tab1:
 
         with col2:
             st.markdown("**Semen parameters — initial sample**")
-            first_volume      = st.number_input("Initial semen volume (mL)",       0.0, 20.0,  2.5, 0.1)
-            first_count       = st.number_input("Initial sperm count (×10⁶/mL)",   0.0, 500.0, 40.0, 0.1)
-            first_motile      = st.number_input("Initial total motility (%)",       0.0, 100.0, 60.0, 0.1)
-            first_prog_motile = st.number_input("Initial progressive motility (%)", 0.0, 100.0, 40.0, 0.1)
+            first_volume      = st.number_input("Initial semen volume (mL)",       0.0, 20.0,  3.0,  0.1)
+            first_count       = st.number_input("Initial sperm count (×10⁶/mL)",   0.0, 500.0, 41.3, 0.1)
+            first_motile      = st.number_input("Initial total motility (%)",       0.0, 100.0, 54.7, 0.1)
+            first_prog_motile = st.number_input("Initial progressive motility (%)", 0.0, 100.0, 52.6, 0.1)
 
             st.markdown("**Semen parameters — prewash**")
-            pre_count  = st.number_input("Prewash sperm count (×10⁶/mL)", 0.0, 500.0, 35.0, 0.1)
-            pre_motile = st.number_input("Prewash motility (%)",           0.0, 100.0, 60.0, 0.1)
+            pre_count  = st.number_input("Prewash sperm count (×10⁶/mL)", 0.0, 500.0, 42.6, 0.1)
+            pre_motile = st.number_input("Prewash motility (%)",           0.0, 100.0, 57.6, 0.1)
 
             st.markdown("**Semen parameters — postwash**")
-            post_count  = st.number_input("Postwash sperm count (×10⁶/mL)", 0.0, 500.0, 12.0, 0.1)
-            post_tpmsc  = st.number_input("Postwash TPMSC (×10⁶)",          0.0, 500.0, 10.0, 0.1)
-            post_motile = st.number_input("Postwash motility (%)",           0.0, 100.0, 80.0, 0.1)
+            post_count  = st.number_input("Postwash sperm count (×10⁶/mL)", 0.0, 500.0, 22.2,  0.1)
+            post_tpmsc  = st.number_input("Postwash TPMSC (×10⁶)",          0.0, 500.0, 10.6,  0.1)
+            post_motile = st.number_input("Postwash motility (%)",           0.0, 100.0, 96.93, 0.1)
 
         submitted = st.form_submit_button("🚀 Run prediction")
 
@@ -349,7 +383,7 @@ with tab1:
 # =================================
 with tab2:
     st.subheader("Batch prediction from CSV")
-    st.write("Upload a CSV with the required raw input columns.")
+    st.write("Upload a CSV with the required raw input columns. Missing values will be imputed automatically.")
     uploaded = st.file_uploader("Upload CSV", type=["csv"], key="upl_calc")
 
     if uploaded is not None:
@@ -428,6 +462,10 @@ with tab4:
 **Validation**
 - Primary: Patient-level GroupShuffleSplit (80/20), random seed 42
 - Secondary: Temporal holdout — trained 2017–2023, tested 2024–2025
+
+**Missing value handling**
+- Missing values are imputed using training set medians
+- Imputed fields are flagged in the prediction output
 """)
 
     st.markdown("### Primary vs Temporal validation")
@@ -437,6 +475,13 @@ with tab4:
         "Temporal":  [0.2434, 0.7894, 0.2053, 0.818, 0.461, 0.975],
     })
     st.dataframe(comparison_df, use_container_width=True)
+
+    st.markdown("### Training set medians (used for imputation)")
+    medians_df = pd.DataFrame([
+        {"Feature": k, "Median": v}
+        for k, v in TRAINING_MEDIANS.items()
+    ])
+    st.dataframe(medians_df, use_container_width=True)
 
     st.markdown("### Final model predictors")
     feature_table = pd.DataFrame({
