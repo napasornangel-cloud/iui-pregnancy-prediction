@@ -1,22 +1,26 @@
 import pandas as pd
 import numpy as np
+from pathlib import Path
+
+from src.feature_engineering import run_feature_engineering
+
+BASE_DIR = Path(__file__).resolve().parents[1]
+
+RAW_PATH = BASE_DIR / "data/raw/final_coding.xlsx"
+CLEAN_PATH = BASE_DIR / "data/processed/cycle_level_ready_for_ml.csv"
+FEATURES_PATH = BASE_DIR / "data/processed/cycle_level_features.csv"
 
 
 def clean_basic_values(df: pd.DataFrame) -> pd.DataFrame:
-    print("--- 1. Basic Cleaning ---")
     data = df.copy()
 
     weird_na = {"", " ", "na", "n/a", "nan", "none", "null", "-"}
 
     for col in data.columns:
         if data[col].dtype == "object":
-
-            # strip string แต่ไม่ lower-case ทั้ง column เพื่อไม่ให้ HN เสีย
             data[col] = data[col].apply(
                 lambda x: x.strip() if isinstance(x, str) else x
             )
-
-            # แปลง weird NA เป็น np.nan (case insensitive)
             data[col] = data[col].apply(
                 lambda x: np.nan if isinstance(x, str) and x.lower() in weird_na else x
             )
@@ -25,7 +29,6 @@ def clean_basic_values(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def coerce_numeric_columns(df: pd.DataFrame) -> pd.DataFrame:
-    print("--- 2. Coerce Numeric Columns ---")
     data = df.copy()
 
     numeric_cols = [
@@ -56,54 +59,25 @@ def coerce_numeric_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_hcg_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    hCG_Dose ใน Excel coding:
-
-        0 = Natural (ไม่ฉีด)
-        1 = Pregnyl 5000 IU
-        2 = Ovidrel 6500 IU
-
-    แตกเป็น 2 feature:
-
-        hCG_Used
-            0 = ไม่ฉีด
-            1 = ฉีด
-            NaN = ไม่มีข้อมูล / encoding ผิด
-
-        hCG_Type
-            0 = Natural
-            1 = Pregnyl
-            2 = Ovidrel
-            NaN = ไม่มีข้อมูล / encoding ผิด
-    """
-
-    print("--- 3. Add hCG Features ---")
     data = df.copy()
 
     if "hCG_Dose" in data.columns:
-
         x = pd.to_numeric(data["hCG_Dose"], errors="coerce")
 
-        # hCG_Type
+        data["hCG_Used"] = np.where(
+            x.isna(), np.nan,
+            np.where(x == 0, 0, 1)
+        )
+
         data["hCG_Type"] = np.where(
-            x.isna(),
-            np.nan,
+            x.isna(), np.nan,
             np.where(x.isin([0, 1, 2]), x, np.nan)
         )
 
-        # hCG_Used
-        data["hCG_Used"] = np.where(
-            x.isna(),
-            np.nan,
-            np.where(x.isin([0, 1, 2]), np.where(x == 0, 0, 1), np.nan)
-        )
-
-        # log ค่า encoding ผิด
-        unknown = x[(x.notna()) & (~x.isin([0, 1, 2]))]
-
-        if len(unknown) > 0:
-            print(
-                f"  ⚠️ พบ hCG_Dose นอก encoding 0/1/2: {sorted(unknown.unique())}"
+        unexpected_values = x[(x.notna()) & (~x.isin([0, 1, 2]))]
+        if len(unexpected_values) > 0:
+            raise ValueError(
+                f"Unexpected values in hCG_Dose: {sorted(unexpected_values.unique())}"
             )
 
         data = data.drop(columns=["hCG_Dose"])
@@ -112,19 +86,9 @@ def add_hcg_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def clean_gynecological_surgical_history(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    แปลง Gynecological_Surgical_History เป็น binary:
-
-        0 = ไม่มีประวัติผ่าตัด
-        1 = มีประวัติผ่าตัด
-        NaN = ไม่มีข้อมูล
-    """
-
-    print("--- 4. Clean Gynecological_Surgical_History ---")
     data = df.copy()
 
     if "Gynecological_Surgical_History" in data.columns:
-
         false_like = {"0", "0.0", "none", "false", "no", ""}
         missing_like = {"nan", "na", "n/a", "null"}
 
@@ -133,127 +97,64 @@ def clean_gynecological_surgical_history(df: pd.DataFrame) -> pd.DataFrame:
         )
 
         data["Gynecological_Surgical_History"] = s.apply(
-            lambda x:
-                0 if (x in false_like or x == 0)
-                else (np.nan if pd.isna(x) or x in missing_like else 1)
+            lambda x: 0 if (x in false_like or x == 0)
+            else (np.nan if pd.isna(x) or x in missing_like else 1)
         )
 
     return data
 
 
 def filter_cycle_1_to_3(df: pd.DataFrame) -> pd.DataFrame:
-
-    print("--- 5. Filter Cycle_Number 1-3 ---")
     data = df.copy()
 
     if "Cycle_Number" in data.columns:
-
         data["Cycle_Number"] = pd.to_numeric(data["Cycle_Number"], errors="coerce")
-
-        before = len(data)
-
         data = data[data["Cycle_Number"].isin([1, 2, 3])]
-
-        after = len(data)
-
-        print(f"  Dropped {before - after} rows (Cycle_Number not in 1-3 or NaN)")
 
     return data
 
 
 def final_sanity_checks(df: pd.DataFrame) -> pd.DataFrame:
-
-    print("--- 6. Final Sanity Checks ---")
     data = df.copy()
 
     if "Result" in data.columns:
-
         data["Result"] = pd.to_numeric(data["Result"], errors="coerce")
-
         data = data.dropna(subset=["Result"])
 
         valid_vals = {0, 1, 0.0, 1.0}
-
-        bad_vals = set(data["Result"].unique()) - valid_vals
-
-        if bad_vals:
-            raise ValueError(
-                f"Result มีค่าที่ไม่ใช่ 0/1: {sorted(bad_vals)}"
-            )
+        invalid_vals = set(data["Result"].unique()) - valid_vals
+        if invalid_vals:
+            raise ValueError(f"Invalid values in Result: {sorted(invalid_vals)}")
 
     if "HN" in data.columns:
-
         data = data.dropna(subset=["HN"])
-
         data["HN"] = data["HN"].astype(str).str.strip()
-
         data = data[data["HN"] != ""]
 
     if {"HN", "Cycle_Number"}.issubset(data.columns):
-
-        dup = data.duplicated(subset=["HN", "Cycle_Number"]).sum()
-
-        print(f"  Duplicate (HN, Cycle_Number): {dup}")
-
-        if dup > 0:
-            print(f"  ⚠️ พบ duplicate {dup} rows — ควรตรวจสอบก่อน proceed")
-
-    print(f"  Has Date column: {'Date' in data.columns}")
-
-    if "Result" in data.columns:
-        print(
-            f"  Result distribution:\n"
-            f"{data['Result'].value_counts(dropna=False).to_string()}"
-        )
+        duplicated = data.duplicated(subset=["HN", "Cycle_Number"])
+        if duplicated.any():
+            raise ValueError("Duplicate records found for (HN, Cycle_Number)")
 
     return data
 
 
+def main():
+    df = pd.read_excel(RAW_PATH, sheet_name="final")
+
+    df = clean_basic_values(df)
+    df = coerce_numeric_columns(df)
+    df = add_hcg_features(df)
+    df = clean_gynecological_surgical_history(df)
+    df = filter_cycle_1_to_3(df)
+    df = final_sanity_checks(df)
+
+    CLEAN_PATH.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(CLEAN_PATH, index=False)
+
+    # IMPORTANT: cast Path -> str เพื่อ compatibility กับของเดิม
+    run_feature_engineering(str(CLEAN_PATH), str(FEATURES_PATH))
+
+
 if __name__ == "__main__":
-
-    raw_path = "data/raw/final_coding.xlsx"
-
-    output_path = "data/processed/cycle_level_ready_for_ml.csv"
-
-    try:
-
-        df = pd.read_excel(raw_path, sheet_name="final")
-
-        print(f"โหลดข้อมูลสำเร็จ รูปแบบข้อมูลเริ่มต้น: {df.shape}")
-
-        df = clean_basic_values(df)
-        print(f"  shape: {df.shape}")
-
-        df = coerce_numeric_columns(df)
-        print(f"  shape: {df.shape}")
-
-        df = add_hcg_features(df)
-        print(f"  shape: {df.shape}")
-
-        df = clean_gynecological_surgical_history(df)
-        print(f"  shape: {df.shape}")
-
-        df = filter_cycle_1_to_3(df)
-        print(f"  shape: {df.shape}")
-
-        df = final_sanity_checks(df)
-
-        print(f"\nหลัง cleaning และกรอง cycle 1-3: {df.shape}")
-
-        df.to_csv(output_path, index=False)
-
-        print(f"\n✅ Data Preparation เสร็จสมบูรณ์!")
-        print(f"บันทึกไฟล์ที่: {output_path}")
-
-        print(
-            "\nหมายเหตุ:\n"
-            "- เวอร์ชันนี้ยังไม่ทำ imputation\n"
-            "- ไม่ cap outliers\n"
-            "- ต้องทำ preprocessing หลัง train/test split เท่านั้น"
-        )
-
-    except Exception as e:
-
-        print(f"❌ เกิดข้อผิดพลาด: {e}")
-
-        raise
+    main()

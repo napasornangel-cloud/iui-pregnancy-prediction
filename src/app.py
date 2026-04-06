@@ -9,23 +9,23 @@ from pathlib import Path
 # =============================
 # Paths / fixed settings
 # =============================
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent  # app.py is inside src/
 
-BASE_MODEL_PATH = BASE_DIR / "models_test2/final_model/XGBoost_Baseline_calibration_base_model.joblib"
-CALIBRATOR_PATH = BASE_DIR / "models_test2/final_model/isotonic_calibrator_final_xgb.joblib"
-SHAP_IMG        = BASE_DIR / "reports_test2/figures/shap_final_xgb/SHAP_Beeswarm_Final_XGBoost_Baseline.png"
+BASE_MODEL_PATH = BASE_DIR / "models" / "saved_models" / "final_model" / "XGBoost_Baseline_calibration_base_model.joblib"
+CALIBRATOR_PATH = BASE_DIR / "models" / "saved_models" / "final_model" / "isotonic_calibrator_final_xgb.joblib"
+SHAP_IMG        = BASE_DIR / "reports" / "figures" / "shap_final_xgb" / "SHAP_Beeswarm_Final_XGBoost_Baseline.png"
 
 FINAL_FEATURES = [
     "Uterine_Factors", "Total_Female_Pathology", "Ovulatory_Factors",
-    "Cycle_Day", "Post_TPMSC", "First_Count", "Pre_Count",
-    "Gynecological_Surgical_History", "Post_Count", "Delta_Motile",
-    "Age_Female", "First_Progressive_Motile", "First_Volume",
-    "Menstrual_Interval_Days", "First_Motile", "BMI_InfertilityType_Interaction",
+    "Cycle_Day", "First_Count", "Pre_Count", "Post_TPMSC",
+    "Gynecological_Surgical_History", "Delta_Motile", "Age_Female",
+    "First_Volume", "Post_Count", "First_Progressive_Motile",
+    "Menstrual_Interval_Days", "BMI_InfertilityType_Interaction", "First_TPMSC",
 ]
 
 LOW_TIER_CUTOFF  = 0.023256
 HIGH_TIER_CUTOFF = 0.055556
-VERY_LOW_CUTOFF  = LOW_TIER_CUTOFF
+VERY_LOW_CUTOFF  = 0.01
 
 DISPLAY_MAP = {
     "Uterine_Factors":                 "Uterine factor",
@@ -44,6 +44,7 @@ DISPLAY_MAP = {
     "Menstrual_Interval_Days":         "Menstrual cycle interval (days)",
     "First_Motile":                    "Initial total motility",
     "BMI_InfertilityType_Interaction": "BMI × infertility type",
+    "First_TPMSC":                     "Initial TPMSC",
 }
 
 REQUIRED_RAW_COLUMNS = [
@@ -56,31 +57,167 @@ REQUIRED_RAW_COLUMNS = [
     "Body_Mass_Index", "Infertility_Type",
 ]
 
-# Training medians สำหรับ impute missing values
 TRAINING_MEDIANS = {
-    "Uterine_Factors":             0.0,
-    "Tubal_Factors":               0.0,
-    "Ovarian_Factors":             0.0,
-    "Ovulatory_Factors":           0.0,
-    "Cervical_Factors":            0.0,
-    "Endometriosis_Factors":       0.0,
-    "Multisystem_Factors":         0.0,
-    "Cycle_Day":                   14.0,
-    "Post_TPMSC":                  10.641124,
-    "First_Count":                 41.31,
-    "Pre_Count":                   42.6,
+    "Uterine_Factors":                0.0,
+    "Tubal_Factors":                  0.0,
+    "Ovarian_Factors":                0.0,
+    "Ovulatory_Factors":              0.0,
+    "Cervical_Factors":               0.0,
+    "Endometriosis_Factors":          0.0,
+    "Multisystem_Factors":            0.0,
+    "Cycle_Day":                      14.0,
+    "Post_TPMSC":                     10.641124,
+    "First_Count":                    41.31,
+    "Pre_Count":                      42.6,
     "Gynecological_Surgical_History": 0.0,
-    "Post_Count":                  22.2,
-    "Post_Motile":                 96.93,
-    "Pre_Motile":                  57.6,
-    "Age_Female":                  35.0,
-    "First_Progressive_Motile":    52.56,
-    "First_Volume":                3.0,
-    "Menstrual_Interval_Days":     29.0,
-    "First_Motile":                54.7,
-    "Body_Mass_Index":             21.718066,
-    "Infertility_Type":            0.0,
+    "Post_Count":                     22.2,
+    "Post_Motile":                    96.93,
+    "Pre_Motile":                     57.6,
+    "Age_Female":                     35.0,
+    "First_Progressive_Motile":       52.56,
+    "First_Volume":                   3.0,
+    "Menstrual_Interval_Days":        29.0,
+    "First_Motile":                   54.7,
+    "Body_Mass_Index":                21.718066,
+    "Infertility_Type":               0.0,
 }
+
+# Input validation rules: (min, max)
+VALIDATION_RULES = {
+    "Age_Female":             (18, 55),
+    "Body_Mass_Index":        (10, 60),
+    "Menstrual_Interval_Days": (15, 180),
+    "Cycle_Day":              (1, 40),
+    "First_Volume":           (0, 20),
+    "First_Count":            (0, 500),
+    "First_Motile":           (0, 100),
+    "First_Progressive_Motile": (0, 100),
+    "Pre_Count":              (0, 500),
+    "Pre_Motile":             (0, 100),
+    "Post_Count":             (0, 500),
+    "Post_TPMSC":             (0, 500),
+    "Post_Motile":            (0, 100),
+}
+
+# =============================
+# Page config + Custom CSS
+# =============================
+st.set_page_config(
+    page_title="IUI Pregnancy Probability Tool",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Serif+Display&display=swap');
+
+html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
+
+section[data-testid="stSidebar"] {
+    background: #0f2b4a;
+    padding-top: 2rem;
+}
+section[data-testid="stSidebar"] * { color: #e8f0fe !important; }
+
+.main { background: #f5f7fa; }
+
+.result-card {
+    background: white;
+    border-radius: 16px;
+    padding: 1.5rem 2rem;
+    box-shadow: 0 2px 12px rgba(15,43,74,0.08);
+    margin-bottom: 1.2rem;
+    border-left: 4px solid #1565c0;
+}
+.result-card h3 {
+    font-family: 'DM Serif Display', serif;
+    color: #0f2b4a;
+    font-size: 1.1rem;
+    margin-bottom: 0.5rem;
+}
+
+.tier-badge {
+    display: inline-block;
+    padding: 0.3rem 1rem;
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    letter-spacing: 0.03em;
+}
+.tier-low  { background: #fdecea; color: #c62828; }
+.tier-mid  { background: #fff8e1; color: #e65100; }
+.tier-high { background: #e8f5e9; color: #2e7d32; }
+
+.metric-row {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin: 1rem 0;
+}
+.metric-box {
+    flex: 1;
+    min-width: 130px;
+    background: #f0f4ff;
+    border-radius: 12px;
+    padding: 1rem;
+    text-align: center;
+}
+.metric-box .label {
+    font-size: 0.75rem;
+    color: #5c6bc0;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.3rem;
+}
+.metric-box .value {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.8rem;
+    color: #0f2b4a;
+    line-height: 1;
+}
+
+.section-header {
+    font-family: 'DM Serif Display', serif;
+    color: #0f2b4a;
+    font-size: 1.3rem;
+    border-bottom: 2px solid #e3eafc;
+    padding-bottom: 0.4rem;
+    margin: 1.5rem 0 1rem;
+}
+
+.form-group-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #1565c0;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: 1.2rem 0 0.4rem;
+}
+
+.interp-box {
+    background: #e8f0fe;
+    border-radius: 12px;
+    padding: 1rem 1.4rem;
+    color: #1a237e;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    margin-top: 0.8rem;
+}
+
+.disclaimer-box {
+    background: #fff8e1;
+    border-radius: 12px;
+    padding: 0.8rem 1.2rem;
+    color: #e65100;
+    font-size: 0.82rem;
+    line-height: 1.6;
+    margin-top: 0.6rem;
+}
+
+#MainMenu, footer { visibility: hidden; }
+</style>
+""", unsafe_allow_html=True)
 
 # =============================
 # Helpers
@@ -90,24 +227,27 @@ def sigmoid(z):
 
 def assign_probability_tier(p_cal):
     if p_cal < LOW_TIER_CUTOFF:
-        return "Tier 1 (Low Probability)"
+        return "Tier 1 (Low Probability)", "tier-low"
     if p_cal < HIGH_TIER_CUTOFF:
-        return "Tier 2 (Intermediate Probability)"
-    return "Tier 3 (High Probability)"
+        return "Tier 2 (Intermediate Probability)", "tier-mid"
+    return "Tier 3 (High Probability)", "tier-high"
 
 def very_low_flag(p_cal):
     return "Yes" if p_cal < VERY_LOW_CUTOFF else "No"
-
-def tier_color_name(tier):
-    if "Tier 1" in tier: return "red"
-    if "Tier 2" in tier: return "orange"
-    return "green"
 
 def cum3_from_p1(p1):
     return 1.0 - (1.0 - p1) ** 3
 
 def group_display_name(raw_name):
     return DISPLAY_MAP.get(str(raw_name), str(raw_name).replace("_", " "))
+
+def validate_inputs(row: dict) -> list[str]:
+    errors = []
+    for col, (lo, hi) in VALIDATION_RULES.items():
+        val = row.get(col)
+        if val is not None and not (lo <= float(val) <= hi):
+            errors.append(f"{DISPLAY_MAP.get(col, col)}: value {val} is outside expected range [{lo}, {hi}]")
+    return errors
 
 @st.cache_resource
 def load_base_model():
@@ -123,41 +263,28 @@ def load_calibrator():
 
 def compute_engineered_features(df_raw):
     df = df_raw.copy()
-
-    # เช็ค columns ที่จำเป็น
     missing_cols = [c for c in REQUIRED_RAW_COLUMNS if c not in df.columns]
     if missing_cols:
         raise ValueError("Missing required raw columns:\n- " + "\n- ".join(missing_cols))
-
-    # แปลงเป็น numeric
     for c in REQUIRED_RAW_COLUMNS:
         df[c] = pd.to_numeric(df[c], errors="coerce")
-
-    # impute missing values ด้วย training medians
     imputed_cols = []
     for c in REQUIRED_RAW_COLUMNS:
         if df[c].isna().any():
             median_val = TRAINING_MEDIANS.get(c, 0.0)
             df[c] = df[c].fillna(median_val)
             imputed_cols.append(f"{c} → {median_val}")
-
     if imputed_cols:
-        st.warning(
-            "⚠️ Missing values were imputed using training set medians:\n\n" +
-            "\n".join(f"- {x}" for x in imputed_cols) +
-            "\n\nResults should be interpreted with caution."
-        )
-
-    # Feature engineering
-    df["Total_Female_Pathology"] = (
-        df["Uterine_Factors"] + df["Tubal_Factors"] +
-        df["Ovarian_Factors"] + df["Ovulatory_Factors"] +
-        df["Cervical_Factors"] + df["Endometriosis_Factors"] +
-        df["Multisystem_Factors"]
-    )
+        st.warning("⚠️ Missing values were imputed using training set medians:\n\n" +
+                   "\n".join(f"- {x}" for x in imputed_cols))
+    df["Total_Female_Pathology"]          = (df["Uterine_Factors"] + df["Tubal_Factors"] +
+                                              df["Ovarian_Factors"] + df["Ovulatory_Factors"] +
+                                              df["Cervical_Factors"] + df["Endometriosis_Factors"] +
+                                              df["Multisystem_Factors"])
     df["Delta_Motile"]                    = df["Post_Motile"] - df["Pre_Motile"]
     df["BMI_InfertilityType_Interaction"] = df["Body_Mass_Index"] * df["Infertility_Type"]
-
+    df["First_TPMSC"]                     = (df["First_Volume"] * df["First_Count"] *
+                                              df["First_Progressive_Motile"] / 100).clip(upper=200)
     return df[FINAL_FEATURES].copy()
 
 def predict_raw_and_calibrated(X):
@@ -172,10 +299,10 @@ def local_explain_one_row(X_row, top_k=8):
     xgb_model = model.named_steps["model"] if hasattr(model, "named_steps") else model
     explainer = shap.TreeExplainer(xgb_model)
     shap_vals = explainer.shap_values(X_row)
-    if isinstance(shap_vals, list):     shap_vals = shap_vals[1]
-    if shap_vals.ndim == 3:             shap_vals = shap_vals[:, :, 1]
-    sv   = shap_vals.reshape(-1)
-    base = explainer.expected_value
+    if isinstance(shap_vals, list):  shap_vals = shap_vals[1]
+    if shap_vals.ndim == 3:          shap_vals = shap_vals[:, :, 1]
+    sv    = shap_vals.reshape(-1)
+    base  = explainer.expected_value
     if isinstance(base, (list, np.ndarray)):
         base = base[1] if len(np.ravel(base)) >= 2 else float(np.ravel(base)[0])
     base  = float(base)
@@ -188,9 +315,9 @@ def local_explain_one_row(X_row, top_k=8):
         delta_pp = (p_after - p_before) * 100.0
         arrow    = "↑" if delta_pp >= 0 else "↓"
         rows.append((label, round(delta_pp, 2),
-                     f"{arrow} increases model-estimated probability" if delta_pp >= 0
-                     else f"{arrow} decreases model-estimated probability"))
-    return pd.DataFrame(rows, columns=["Item", "Approx. change (pp)", "Meaning"])
+                     f"{arrow} increases probability" if delta_pp >= 0
+                     else f"{arrow} decreases probability"))
+    return pd.DataFrame(rows, columns=["Factor", "Approx. change (pp)", "Direction"])
 
 def plot_shap_waterfall(X_row):
     model     = load_base_model()
@@ -198,62 +325,70 @@ def plot_shap_waterfall(X_row):
     explainer = shap.TreeExplainer(xgb_model)
     exp = explainer(X_row)
     exp.feature_names = [DISPLAY_MAP.get(c, c) for c in X_row.columns]
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig, _ = plt.subplots(figsize=(8, 5))
     shap.plots.waterfall(exp[0], max_display=10, show=False)
     plt.tight_layout()
     return fig
 
 def plot_gauge(p_cal):
+    tier_label, _ = assign_probability_tier(p_cal)
+    color = "#c62828" if "Tier 1" in tier_label else ("#e65100" if "Tier 2" in tier_label else "#2e7d32")
     fig, ax = plt.subplots(figsize=(4, 2.5), subplot_kw={"aspect": "equal"})
-    theta   = np.linspace(np.pi, 0, 300)
-    ax.plot(np.cos(theta), np.sin(theta), color="#e0e0e0", linewidth=18, solid_capstyle="round")
+    fig.patch.set_facecolor("white")
+    theta = np.linspace(np.pi, 0, 300)
+    ax.plot(np.cos(theta), np.sin(theta), color="#e8edf5", linewidth=20, solid_capstyle="round")
     fill_theta = np.linspace(np.pi, np.pi - p_cal * np.pi, 300)
-    color = "#d73027" if p_cal < LOW_TIER_CUTOFF else ("#fee08b" if p_cal < HIGH_TIER_CUTOFF else "#1a9850")
-    ax.plot(np.cos(fill_theta), np.sin(fill_theta), color=color, linewidth=18, solid_capstyle="round")
-    ax.text(0, -0.15, f"{p_cal:.1%}", ha="center", va="center", fontsize=20, fontweight="bold")
-    ax.text(0, -0.45, "Calibrated probability", ha="center", va="center", fontsize=9, color="gray")
+    ax.plot(np.cos(fill_theta), np.sin(fill_theta), color=color, linewidth=20, solid_capstyle="round")
+    ax.text(0, -0.05, f"{p_cal:.1%}", ha="center", va="center", fontsize=22,
+            fontweight="bold", color="#0f2b4a", fontfamily="serif")
+    ax.text(0, -0.42, "Calibrated probability", ha="center", va="center", fontsize=9, color="#78909c")
     ax.set_xlim(-1.3, 1.3); ax.set_ylim(-0.6, 1.2); ax.axis("off")
     return fig
 
-def interpretation_text(p_cal):
-    tier = assign_probability_tier(p_cal)
-    if "Tier 1" in tier:
-        return ("This result falls in the **low-probability** group. "
-                "In the study cohort, this group had the lowest cumulative pregnancy rates across 1–3 cycles.")
-    if "Tier 2" in tier:
-        return ("This result falls in the **intermediate-probability** group. "
-                "This profile suggests a moderate expected IUI yield.")
-    return ("This result falls in the **high-probability** group. "
-            "In the study cohort, this group had the highest cumulative pregnancy rates across 1–3 cycles.")
-
-def render_prediction_summary(p_raw, p_cal, show_gauge=True):
+def render_result_card(p_raw, p_cal):
     p_cum3 = cum3_from_p1(p_cal)
-    tier   = assign_probability_tier(p_cal)
-    vlow   = very_low_flag(p_cal)
-    color  = tier_color_name(tier)
+    tier_label, tier_css = assign_probability_tier(p_cal)
+    vlow = very_low_flag(p_cal)
 
-    if show_gauge:
-        col_gauge, col_metrics = st.columns([1, 2])
-        with col_gauge:
-            st.pyplot(plot_gauge(p_cal), use_container_width=True)
-        with col_metrics:
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Raw per-cycle prob.", f"{p_raw:.1%}")
-            c2.metric("Within 3 cycles",     f"{p_cum3:.1%}")
-            c3.metric("Risk tier",            tier)
-            st.caption(f"Very low flag: {vlow}")
-            st.markdown(f"**Tier:** :{color}[{tier}]")
-    else:
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Raw per-cycle prob.",        f"{p_raw:.1%}")
-        c2.metric("Calibrated per-cycle prob.", f"{p_cal:.1%}")
-        c3.metric("Within 3 cycles",            f"{p_cum3:.1%}")
-        c4.metric("Risk tier",                  tier)
-        st.caption(f"Very low flag: {vlow}")
-        st.markdown(f"**Tier:** :{color}[{tier}]")
+    col_gauge, col_detail = st.columns([1, 2])
+    with col_gauge:
+        st.pyplot(plot_gauge(p_cal), use_container_width=True)
+    with col_detail:
+        st.markdown(f"""
+        <div class="result-card">
+            <h3>Prediction Result</h3>
+            <div class="metric-row">
+                <div class="metric-box">
+                    <div class="label">Raw per-cycle</div>
+                    <div class="value">{p_raw:.1%}</div>
+                </div>
+                <div class="metric-box">
+                    <div class="label">Calibrated</div>
+                    <div class="value">{p_cal:.1%}</div>
+                </div>
+                <div class="metric-box">
+                    <div class="label">Within 3 cycles *</div>
+                    <div class="value">{p_cum3:.1%}</div>
+                </div>
+            </div>
+            <span class="tier-badge {tier_css}">{tier_label}</span>
+            &nbsp;&nbsp;<small style="color:#78909c">Very low flag: {vlow}</small>
+        </div>
+        """, unsafe_allow_html=True)
 
-    st.markdown("### Clinical interpretation")
-    st.info(interpretation_text(p_cal))
+    interp = {
+        "Tier 1": "This result falls in the <b>low-probability</b> group. In the study cohort, this group had the lowest cumulative pregnancy rates across 1–3 cycles.",
+        "Tier 2": "This result falls in the <b>intermediate-probability</b> group. This profile suggests a moderate expected IUI yield.",
+        "Tier 3": "This result falls in the <b>high-probability</b> group. In the study cohort, this group had the highest cumulative pregnancy rates across 1–3 cycles.",
+    }
+    key = "Tier 1" if "Tier 1" in tier_label else ("Tier 2" if "Tier 2" in tier_label else "Tier 3")
+    st.markdown(f'<div class="interp-box">💬 {interp[key]}</div>', unsafe_allow_html=True)
+    st.markdown("""
+    <div class="disclaimer-box">
+    * Within 3 cycles is approximated as 1 − (1 − p)³, assuming independent cycles with constant per-cycle probability.<br>
+    † SHAP explanations reflect model output before probability calibration.
+    </div>
+    """, unsafe_allow_html=True)
 
 def build_example_input():
     return pd.DataFrame([{
@@ -268,170 +403,188 @@ def build_example_input():
     }])
 
 # =============================
-# Page config
+# Sidebar
 # =============================
-st.set_page_config(page_title="IUI Pregnancy Probability Tool", layout="wide")
-st.title("🔬 IUI Pregnancy Probability Tool")
-st.caption("Research prototype · For counseling and risk stratification only · Not a clinical decision system")
+with st.sidebar:
+    st.markdown("""
+    <div style="text-align:center; padding-bottom:1.5rem;">
+        <div style="font-size:2rem;">🔬</div>
+        <div style="font-family:'DM Serif Display',serif; font-size:1.2rem; color:white; line-height:1.3;">
+            IUI Pregnancy<br>Probability Tool
+        </div>
+        <div style="font-size:0.75rem; color:#90caf9; margin-top:0.4rem;">Research prototype</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-with st.expander("ℹ️ How to use this tool", expanded=False):
-    st.markdown(f"""
-**What the tool reports**
-- **Raw per-cycle probability:** direct XGBoost model output
-- **Calibrated per-cycle probability:** post-hoc isotonic-calibrated probability for counseling
-- **Within 3 cycles (approx.):** 1 − (1 − p)³
-- **Risk tier:** Low / Intermediate / High
+    page = st.radio("Navigation", [
+        "✏️  Manual Entry",
+        "📂  Batch CSV",
+        "🔍  Explanation",
+        "ℹ️  Model Info"
+    ], label_visibility="collapsed")
 
-**Risk-tier cutoffs (calibrated probability)**
-- Tier 1 (Low): p < {LOW_TIER_CUTOFF:.6f}
-- Tier 2 (Intermediate): {LOW_TIER_CUTOFF:.6f} ≤ p < {HIGH_TIER_CUTOFF:.6f}
-- Tier 3 (High): p ≥ {HIGH_TIER_CUTOFF:.6f}
+    st.markdown("---")
+    example_df = build_example_input()
+    st.download_button(
+        "⬇️ Download CSV Template",
+        example_df.to_csv(index=False).encode("utf-8"),
+        "iui_input_template.csv", "text/csv",
+        use_container_width=True
+    )
+    st.markdown("""
+    <div style="font-size:0.72rem; color:#90caf9; margin-top:1.5rem; line-height:1.6;">
+    ⚠️ For research use only.<br>
+    Not a clinical decision system.<br>
+    Always use with clinical judgment.
+    </div>
+    """, unsafe_allow_html=True)
 
-**Missing values**
-- If a value is unavailable, leave the field as 0 or use the default value
-- Missing values will be automatically imputed using training set medians
-- Results should be interpreted with caution when values are imputed
+# =============================
+# Pages
+# =============================
 
-**Important**
-- Outputs are statistical estimates, not guarantees.
-- Always use in conjunction with clinical judgment.
-- This tool is for research use only.
-""")
-
-example_df = build_example_input()
-st.download_button("⬇️ Download sample CSV template",
-                   example_df.to_csv(index=False).encode("utf-8"),
-                   "iui_input_template.csv", "text/csv")
-
-tab1, tab2, tab3, tab4 = st.tabs(["✏️ Manual entry", "📂 Batch CSV", "🔍 Explanation", "ℹ️ Model info"])
-
-# =================================
-# TAB 1: Manual entry
-# =================================
-with tab1:
-    st.subheader("Manual entry — one patient-cycle")
+if "Manual" in page:
+    st.markdown('<div class="section-header">✏️ Manual Entry — Single Patient Cycle</div>', unsafe_allow_html=True)
     st.caption("Leave fields as 0 if value is unavailable — missing values will be imputed automatically.")
 
     with st.form("manual_form"):
         col1, col2 = st.columns(2)
 
         with col1:
-            st.markdown("**Female & cycle factors**")
-            age_female              = st.number_input("Female age", 18.0, 55.0, 35.0, 1.0)
-            bmi                     = st.number_input("BMI", 10.0, 60.0, 21.7, 0.1)
+            st.markdown('<div class="form-group-label">🩺 Female & Cycle Factors</div>', unsafe_allow_html=True)
+            age_female              = st.number_input("Female age (years)", 18.0, 55.0, 35.0, 1.0)
+            bmi                     = st.number_input("BMI (kg/m²)", 10.0, 60.0, 21.7, 0.1)
             menstrual_interval_days = st.number_input("Menstrual cycle interval (days)", 15.0, 180.0, 29.0, 1.0)
             cycle_day               = st.number_input("IUI cycle day", 1.0, 40.0, 14.0, 1.0)
-            infertility_type        = st.selectbox("Infertility type",
-                options=[1, 0],
-                format_func=lambda x: "Primary infertility" if x == 1 else "Secondary infertility")
+            infertility_type        = st.selectbox("Infertility type", options=[1, 0],
+                                                   format_func=lambda x: "Primary" if x == 1 else "Secondary")
 
-            st.markdown("**Female pathology factors** (0 = absent, 1 = present)")
-            uterine_factors       = st.selectbox("Uterine factors",       [0, 1], index=0)
-            tubal_factors         = st.selectbox("Tubal factors",         [0, 1], index=0)
-            ovarian_factors       = st.selectbox("Ovarian factors",       [0, 1], index=0)
-            ovulatory_factors     = st.selectbox("Ovulatory factors",     [0, 1], index=0)
-            cervical_factors      = st.selectbox("Cervical factors",      [0, 1], index=0)
-            endometriosis_factors = st.selectbox("Endometriosis factors", [0, 1], index=0)
-            multisystem_factors   = st.selectbox("Multisystem factors",   [0, 1], index=0)
-            gyn_surgery           = st.selectbox("Gynecologic surgery history", [0, 1], index=0)
+            st.markdown('<div class="form-group-label">🔬 Female Pathology Factors (0=absent, 1=present)</div>', unsafe_allow_html=True)
+            c1a, c1b = st.columns(2)
+            with c1a:
+                uterine_factors       = st.selectbox("Uterine",       [0, 1])
+                ovarian_factors       = st.selectbox("Ovarian",       [0, 1])
+                cervical_factors      = st.selectbox("Cervical",      [0, 1])
+                multisystem_factors   = st.selectbox("Multisystem",   [0, 1])
+            with c1b:
+                tubal_factors         = st.selectbox("Tubal",         [0, 1])
+                ovulatory_factors     = st.selectbox("Ovulatory",     [0, 1])
+                endometriosis_factors = st.selectbox("Endometriosis", [0, 1])
+                gyn_surgery           = st.selectbox("Gyn. surgery",  [0, 1])
 
         with col2:
-            st.markdown("**Semen parameters — initial sample**")
-            first_volume      = st.number_input("Initial semen volume (mL)",       0.0, 20.0,  3.0,  0.1)
-            first_count       = st.number_input("Initial sperm count (×10⁶/mL)",   0.0, 500.0, 41.3, 0.1)
-            first_motile      = st.number_input("Initial total motility (%)",       0.0, 100.0, 54.7, 0.1)
-            first_prog_motile = st.number_input("Initial progressive motility (%)", 0.0, 100.0, 52.6, 0.1)
+            st.markdown('<div class="form-group-label">💉 Initial Semen Sample</div>', unsafe_allow_html=True)
+            first_volume      = st.number_input("Volume (mL)",               0.0, 20.0,  3.0,  0.1)
+            first_count       = st.number_input("Sperm count (×10⁶/mL)",     0.0, 500.0, 41.3, 0.1)
+            first_motile      = st.number_input("Total motility (%)",         0.0, 100.0, 54.7, 0.1)
+            first_prog_motile = st.number_input("Progressive motility (%)",   0.0, 100.0, 52.6, 0.1)
 
-            st.markdown("**Semen parameters — prewash**")
-            pre_count  = st.number_input("Prewash sperm count (×10⁶/mL)", 0.0, 500.0, 42.6, 0.1)
-            pre_motile = st.number_input("Prewash motility (%)",           0.0, 100.0, 57.6, 0.1)
+            st.markdown('<div class="form-group-label">🧫 Prewash Semen</div>', unsafe_allow_html=True)
+            pre_count  = st.number_input("Sperm count (×10⁶/mL) ", 0.0, 500.0, 42.6, 0.1)
+            pre_motile = st.number_input("Motility (%) ",           0.0, 100.0, 57.6, 0.1)
 
-            st.markdown("**Semen parameters — postwash**")
-            post_count  = st.number_input("Postwash sperm count (×10⁶/mL)", 0.0, 500.0, 22.2,  0.1)
-            post_tpmsc  = st.number_input("Postwash TPMSC (×10⁶)",          0.0, 500.0, 10.6,  0.1)
-            post_motile = st.number_input("Postwash motility (%)",           0.0, 100.0, 96.93, 0.1)
+            st.markdown('<div class="form-group-label">✅ Postwash Semen</div>', unsafe_allow_html=True)
+            post_count  = st.number_input("Sperm count (×10⁶/mL)  ", 0.0, 500.0, 22.2,  0.1)
+            post_tpmsc  = st.number_input("TPMSC (×10⁶)",             0.0, 500.0, 10.6,  0.1)
+            post_motile = st.number_input("Motility (%)  ",           0.0, 100.0, 96.93, 0.1)
 
-        submitted = st.form_submit_button("🚀 Run prediction")
+        submitted = st.form_submit_button("🚀 Run Prediction", use_container_width=True, type="primary")
 
     if submitted:
-        try:
-            manual_df = pd.DataFrame([{
-                "Uterine_Factors": uterine_factors, "Tubal_Factors": tubal_factors,
-                "Ovarian_Factors": ovarian_factors, "Ovulatory_Factors": ovulatory_factors,
-                "Cervical_Factors": cervical_factors, "Endometriosis_Factors": endometriosis_factors,
-                "Multisystem_Factors": multisystem_factors, "Cycle_Day": cycle_day,
-                "Post_TPMSC": post_tpmsc, "First_Count": first_count,
-                "Pre_Count": pre_count, "Gynecological_Surgical_History": gyn_surgery,
-                "Post_Count": post_count, "Post_Motile": post_motile, "Pre_Motile": pre_motile,
-                "Age_Female": age_female, "First_Progressive_Motile": first_prog_motile,
-                "First_Volume": first_volume, "Menstrual_Interval_Days": menstrual_interval_days,
-                "First_Motile": first_motile, "Body_Mass_Index": bmi,
-                "Infertility_Type": infertility_type,
-            }])
-            X_manual = compute_engineered_features(manual_df)
-            p_raw, p_cal = predict_raw_and_calibrated(X_manual)
-            st.success("✅ Prediction complete")
-            render_prediction_summary(float(p_raw[0]), float(p_cal[0]), show_gauge=True)
-            st.markdown("### Top factors influencing this prediction")
-            expl = local_explain_one_row(X_manual, top_k=8)
-            st.dataframe(expl, use_container_width=True)
-        except Exception as e:
-            st.error(str(e))
+        input_row = {
+            "Age_Female": age_female, "Body_Mass_Index": bmi,
+            "Menstrual_Interval_Days": menstrual_interval_days, "Cycle_Day": cycle_day,
+            "First_Volume": first_volume, "First_Count": first_count,
+            "First_Motile": first_motile, "First_Progressive_Motile": first_prog_motile,
+            "Pre_Count": pre_count, "Pre_Motile": pre_motile,
+            "Post_Count": post_count, "Post_TPMSC": post_tpmsc, "Post_Motile": post_motile,
+        }
+        errors = validate_inputs(input_row)
+        if errors:
+            for e in errors:
+                st.error(f"⚠️ {e}")
+        else:
+            try:
+                with st.spinner("Running prediction..."):
+                    manual_df = pd.DataFrame([{
+                        "Uterine_Factors": uterine_factors, "Tubal_Factors": tubal_factors,
+                        "Ovarian_Factors": ovarian_factors, "Ovulatory_Factors": ovulatory_factors,
+                        "Cervical_Factors": cervical_factors, "Endometriosis_Factors": endometriosis_factors,
+                        "Multisystem_Factors": multisystem_factors, "Cycle_Day": cycle_day,
+                        "Post_TPMSC": post_tpmsc, "First_Count": first_count,
+                        "Pre_Count": pre_count, "Gynecological_Surgical_History": gyn_surgery,
+                        "Post_Count": post_count, "Post_Motile": post_motile, "Pre_Motile": pre_motile,
+                        "Age_Female": age_female, "First_Progressive_Motile": first_prog_motile,
+                        "First_Volume": first_volume, "Menstrual_Interval_Days": menstrual_interval_days,
+                        "First_Motile": first_motile, "Body_Mass_Index": bmi,
+                        "Infertility_Type": infertility_type,
+                    }])
+                    X_manual = compute_engineered_features(manual_df)
+                    p_raw, p_cal = predict_raw_and_calibrated(X_manual)
 
-# =================================
-# TAB 2: Batch CSV
-# =================================
-with tab2:
-    st.subheader("Batch prediction from CSV")
-    st.write("Upload a CSV with the required raw input columns. Missing values will be imputed automatically.")
+                st.success("✅ Prediction complete")
+                render_result_card(float(p_raw[0]), float(p_cal[0]))
+                st.markdown('<div class="section-header">🧠 Top Factors Influencing This Prediction</div>', unsafe_allow_html=True)
+                st.caption("† SHAP values reflect model output before probability calibration.")
+                expl = local_explain_one_row(X_manual, top_k=8)
+                st.dataframe(expl, use_container_width=True, hide_index=True)
+            except Exception as e:
+                st.error(str(e))
+
+elif "Batch" in page:
+    st.markdown('<div class="section-header">📂 Batch Prediction from CSV</div>', unsafe_allow_html=True)
+    st.write("Upload a CSV with the required raw input columns.")
     uploaded = st.file_uploader("Upload CSV", type=["csv"], key="upl_calc")
 
     if uploaded is not None:
         df_raw = pd.read_csv(uploaded)
-        st.write("Preview"); st.dataframe(df_raw.head(), use_container_width=True)
+        st.write("**Preview**")
+        st.dataframe(df_raw.head(), use_container_width=True)
 
-        if st.button("🚀 Run batch prediction"):
+        if st.button("🚀 Run Batch Prediction", type="primary"):
             try:
-                X = compute_engineered_features(df_raw)
-                p_raw, p_cal = predict_raw_and_calibrated(X)
-                out = df_raw.copy()
-                out["raw_per_cycle_probability"]                     = p_raw
-                out["calibrated_per_cycle_probability"]              = p_cal
-                out["approx_cumulative_probability_within_3_cycles"] = [cum3_from_p1(float(x)) for x in p_cal]
-                out["risk_tier"]                                     = [assign_probability_tier(float(x)) for x in p_cal]
-                out["very_low_flag"]                                 = [very_low_flag(float(x)) for x in p_cal]
-                st.success("✅ Prediction complete")
-                render_prediction_summary(float(p_raw[0]), float(p_cal[0]), show_gauge=False)
-                st.markdown("### Prediction table")
+                with st.spinner("Processing..."):
+                    X = compute_engineered_features(df_raw)
+                    p_raw, p_cal = predict_raw_and_calibrated(X)
+                    out = df_raw.copy()
+                    out["raw_per_cycle_probability"]                     = p_raw
+                    out["calibrated_per_cycle_probability"]              = p_cal
+                    out["approx_cumulative_probability_within_3_cycles"] = [cum3_from_p1(float(x)) for x in p_cal]
+                    tiers = [assign_probability_tier(float(x)) for x in p_cal]
+                    out["risk_tier"]     = [t[0] for t in tiers]
+                    out["very_low_flag"] = [very_low_flag(float(x)) for x in p_cal]
+
+                st.success(f"✅ {len(out)} rows processed")
                 show_cols = ["raw_per_cycle_probability", "calibrated_per_cycle_probability",
                              "approx_cumulative_probability_within_3_cycles", "risk_tier", "very_low_flag"]
-                st.dataframe(out[show_cols], use_container_width=True)
-                st.download_button("⬇️ Download results (CSV)",
+                st.dataframe(out[show_cols], use_container_width=True, hide_index=True)
+                st.caption("* Within 3 cycles assumes independent cycles with constant per-cycle probability.")
+                st.download_button("⬇️ Download Results (CSV)",
                                    out.to_csv(index=False).encode("utf-8"),
                                    "iui_predictions_out.csv", "text/csv")
             except Exception as e:
                 st.error(str(e))
 
-# =================================
-# TAB 3: Explanation
-# =================================
-with tab3:
-    st.subheader("Explain one row from CSV")
+elif "Explanation" in page:
+    st.markdown('<div class="section-header">🔍 Explain One Row from CSV</div>', unsafe_allow_html=True)
     uploaded2 = st.file_uploader("Upload CSV", type=["csv"], key="upl_exp")
 
     if uploaded2 is not None:
         df_raw2 = pd.read_csv(uploaded2)
-        st.write("Preview"); st.dataframe(df_raw2.head(), use_container_width=True)
-        row_idx = st.number_input("Row index", 0, max(0, len(df_raw2)-1), 0, 1)
+        st.dataframe(df_raw2.head(), use_container_width=True)
+        row_idx = st.number_input("Row index to explain", 0, max(0, len(df_raw2)-1), 0, 1)
 
-        if st.button("🔍 Explain this row"):
+        if st.button("🔍 Explain This Row", type="primary"):
             try:
-                X2    = compute_engineered_features(df_raw2)
-                x_row = X2.iloc[[int(row_idx)]].copy()
-                p_raw, p_cal = predict_raw_and_calibrated(x_row)
-                render_prediction_summary(float(p_raw[0]), float(p_cal[0]), show_gauge=True)
+                with st.spinner("Generating explanation..."):
+                    X2    = compute_engineered_features(df_raw2)
+                    x_row = X2.iloc[[int(row_idx)]].copy()
+                    p_raw, p_cal = predict_raw_and_calibrated(x_row)
 
-                st.markdown("### SHAP waterfall plot")
+                render_result_card(float(p_raw[0]), float(p_cal[0]))
+
+                st.markdown('<div class="section-header">📊 SHAP Waterfall Plot</div>', unsafe_allow_html=True)
+                st.caption("† SHAP values reflect model output before probability calibration.")
                 try:
                     fig = plot_shap_waterfall(x_row)
                     st.pyplot(fig, use_container_width=True)
@@ -439,70 +592,62 @@ with tab3:
                 except Exception:
                     pass
 
-                st.markdown("### Top factors (table)")
+                st.markdown('<div class="section-header">📋 Top Factors (Table)</div>', unsafe_allow_html=True)
                 expl = local_explain_one_row(x_row, top_k=8)
-                st.dataframe(expl, use_container_width=True)
-                st.caption("Explanations describe model output, not causal effects.")
+                st.dataframe(expl, use_container_width=True, hide_index=True)
+
             except Exception as e:
                 st.error(str(e))
 
-# =================================
-# TAB 4: Model info
-# =================================
-with tab4:
-    st.subheader("Model information")
+elif "Model" in page:
+    st.markdown('<div class="section-header">ℹ️ Model Information</div>', unsafe_allow_html=True)
 
     st.markdown("""
-**Final model**
-- Algorithm: XGBoost with 16 selected predictors
-- Imbalance handling: No resampling (scale_pos_weight)
-- Probability calibration: Post-hoc isotonic regression
-- Feature selection: Gain-based importance with elbow detection
+    <div class="result-card">
+        <h3>Final Model</h3>
+        <ul style="color:#37474f; line-height:2;">
+            <li>Algorithm: <b>XGBoost</b> with 16 selected predictors</li>
+            <li>Imbalance handling: No resampling (scale_pos_weight)</li>
+            <li>Probability calibration: Post-hoc isotonic regression</li>
+            <li>Feature selection: Gain-based importance with 1-SE rule</li>
+        </ul>
+        <h3>Validation</h3>
+        <ul style="color:#37474f; line-height:2;">
+            <li>Primary: Patient-level GroupShuffleSplit (80/20), seed 42</li>
+            <li>Secondary: Temporal holdout — trained 2017–2023, tested 2024–2025</li>
+        </ul>
+    </div>
+    """, unsafe_allow_html=True)
 
-**Validation**
-- Primary: Patient-level GroupShuffleSplit (80/20), random seed 42
-- Secondary: Temporal holdout — trained 2017–2023, tested 2024–2025
-
-**Missing value handling**
-- Missing values are imputed using training set medians
-- Imputed fields are flagged in the prediction output
-""")
-
-    st.markdown("### Primary vs Temporal validation")
+    st.markdown('<div class="section-header">📊 Primary vs Temporal Validation</div>', unsafe_allow_html=True)
     comparison_df = pd.DataFrame({
-        "Metric":    ["PR-AUC", "ROC-AUC", "Brier", "Sensitivity", "Specificity", "NPV"],
-        "Primary":   [0.1386, 0.6808, 0.2207, 0.902, 0.430, 0.984],
-        "Temporal":  [0.2434, 0.7894, 0.2053, 0.818, 0.461, 0.975],
+        "Metric":   ["PR-AUC", "ROC-AUC", "Brier", "Sensitivity", "Specificity", "NPV"],
+        "Primary":  [0.1386, 0.6808, 0.2207, 0.902, 0.430, 0.984],
+        "Temporal": [0.2434, 0.7894, 0.2053, 0.818, 0.461, 0.975],
     })
-    st.dataframe(comparison_df, use_container_width=True)
+    st.dataframe(comparison_df, use_container_width=True, hide_index=True)
 
-    st.markdown("### Training set medians (used for imputation)")
-    medians_df = pd.DataFrame([
-        {"Feature": k, "Median": v}
-        for k, v in TRAINING_MEDIANS.items()
-    ])
-    st.dataframe(medians_df, use_container_width=True)
-
-    st.markdown("### Final model predictors")
+    st.markdown('<div class="section-header">📋 Final Model Predictors</div>', unsafe_allow_html=True)
     feature_table = pd.DataFrame({
         "Feature":      FINAL_FEATURES,
         "Display name": [group_display_name(f) for f in FINAL_FEATURES]
     })
-    st.dataframe(feature_table, use_container_width=True)
+    st.dataframe(feature_table, use_container_width=True, hide_index=True)
 
-    st.markdown("### Global SHAP explanation")
+    st.markdown('<div class="section-header">🧬 Global SHAP Explanation</div>', unsafe_allow_html=True)
+    st.caption("† SHAP values reflect model output before probability calibration.")
     if SHAP_IMG.exists():
         st.image(str(SHAP_IMG), use_container_width=True)
     else:
-        st.info("SHAP image not found.")
+        st.info(f"SHAP image not found at: {SHAP_IMG}")
 
-    st.markdown("---")
     st.markdown("""
-**⚠️ Disclaimer**
-
-This tool is a research prototype developed for academic purposes.
-It is intended to support — not replace — clinical judgment.
-Outputs represent statistical estimates based on a single-center retrospective cohort
-and may not generalize to all clinical settings.
-Do not use this tool as the sole basis for clinical decision-making.
-""")
+    <div style="background:#fff8e1; border-radius:12px; padding:1rem 1.4rem;
+                color:#e65100; font-size:0.88rem; line-height:1.7; margin-top:1.5rem;">
+    ⚠️ <b>Disclaimer</b><br>
+    This tool is a research prototype for academic purposes.
+    It supports — not replaces — clinical judgment.
+    Outputs are statistical estimates from a single-center retrospective cohort.
+    Do not use as the sole basis for clinical decision-making.
+    </div>
+    """, unsafe_allow_html=True)
